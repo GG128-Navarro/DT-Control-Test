@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Control Test</title>
+
+<style>
+body{
+    margin:0;
+    background:#202020;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    height:100vh;
+}
+
+canvas{
+    width:640px;
+    height:480px;
+    image-rendering:pixelated;
+    image-rendering:crisp-edges;
+}
+</style>
+
+</head>
+<body>
+
+<canvas id="game" width="640" height="480"></canvas>
+
+<script>
+
+// ==================================================
+// CANVAS
+// ==================================================
+
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+ctx.imageSmoothingEnabled = false;
+
+// ==================================================
+// CONFIGURATION
+// ==================================================
+
+const CONFIG = {
+
+    FPS: 30,
+
+    DEBUG: false
+
+};
+
+// ===== Player =====
+
+const PLAYER_SPEED = 3;
+const DIAGONAL_X = 2;
+
+// ===== Collision =====
+
+const HITBOX = {
+
+    left: 32,
+    right: 32,
+    up: 16,
+    down: 16
+
+};
+
+const HITBOX_OFFSET_Y = -16;
+
+// ==================================================
+// SPRITES
+// ==================================================
+
+const sprites = {
+
+    background:new Image(),
+    slime:new Image(),
+    buttonZ:new Image(),
+    buttonX:new Image(),
+    buttonC:new Image()
+
+};
+
+sprites.background.src="./sprites/background.png";
+sprites.slime.src="./sprites/slime.png";
+sprites.buttonZ.src="./sprites/button_z.png";
+sprites.buttonX.src="./sprites/button_x.png";
+sprites.buttonC.src="./sprites/button_c.png";
+
+const FRAME_WIDTHS = [
+    64,
+    68,
+    72,
+    76
+];
+
+const FRAME_X = [
+    0,
+    64,
+    132,
+    204
+];
+
+const BUTTON_SIZE = 68;
+
+// ==================================================
+// BUTTONS
+// ==================================================
+
+const buttons = [
+
+    {
+        sprite: sprites.buttonZ,
+        key: "z",
+        x: 390,
+        y: 150,
+
+        frame: 0,
+
+        state: "idle",
+        timer: 0,
+        queuedRelease: false
+    },
+
+    {
+        sprite: sprites.buttonX,
+        key: "x",
+        x: 454,
+        y: 182,
+
+        frame: 0,
+
+        state: "idle",
+        timer: 0,
+        queuedRelease: false
+    },
+
+    {
+        sprite: sprites.buttonC,
+        key: "c",
+        x: 518,
+        y: 214,
+
+        frame: 0,
+
+        state: "idle",
+        timer: 0,
+        queuedRelease: false
+    }
+
+];
+
+// ==================================================
+// PLAYER
+// ==================================================
+
+const player={
+
+    feet:{
+        x:320,
+        y:316
+    },
+
+    animation:{
+        frame:0,
+        direction:1,
+        timer:0,
+        delay:4
+    }
+
+};
+
+// ==================================================
+// ROOM COLLISION
+// ==================================================
+
+const room=[
+
+  {x:320,y:190-2},
+  {x:576,y:318-2},
+  {x:320,y:446-2},
+  {x:64,y:318-2}
+
+];
+
+const keys={};
+
+const pressed = {};
+
+const released = {};
+
+// ==================================================
+// INPUT
+// ==================================================
+
+document.addEventListener("keydown",e=>{
+
+    const key = e.key.toLowerCase();
+
+    if(!keys[key]){
+
+        pressed[key] = true;
+
+    }
+
+    keys[key] = true;
+
+    //if(key === "f2"){
+
+      //  e.preventDefault();
+    //    CONFIG.DEBUG = !CONFIG.DEBUG;
+
+//    }
+
+});
+
+document.addEventListener("keyup", e=>{
+
+    const key = e.key.toLowerCase();
+
+    keys[key] = false;
+    released[key] = true;
+
+});
+
+// ==================================================
+// FUNCTIONS
+// ==================================================
+
+function insideRoom(x, y){
+
+  return (
+
+      insidePoint(x, y + HITBOX_OFFSET_Y - HITBOX.up) &&
+
+      insidePoint(x + HITBOX.right, y + HITBOX_OFFSET_Y) &&
+
+      insidePoint(x, y + HITBOX_OFFSET_Y + HITBOX.down) &&
+
+      insidePoint(x - HITBOX.left, y + HITBOX_OFFSET_Y)
+
+  );
+
+}
+
+function insidePoint(x, y){
+
+    let sign = 0;
+
+    for(let i = 0; i < room.length; i++){
+
+        const a = room[i];
+        const b = room[(i + 1) % room.length];
+
+        const cross =
+            (b.x - a.x) * (y - a.y) -
+            (b.y - a.y) * (x - a.x);
+
+        if(i === 0){
+
+            sign = Math.sign(cross);
+
+        }
+        else if(Math.sign(cross) !== 0 &&
+                Math.sign(cross) !== sign){
+
+            return false;
+
+        }
+
+    }
+
+    return true;
+
+}
+
+function getMovement(){
+
+    const up    = keys["arrowup"];
+    const down  = keys["arrowdown"];
+    const left  = keys["arrowleft"];
+    const right = keys["arrowright"];
+
+    let dx = 0;
+    let dy = 0;
+
+    if(up && left){
+
+        dx = -DIAGONAL_X;
+        dy = -1;
+
+    }
+    else if(up && right){
+
+        dx = DIAGONAL_X;
+        dy = -1;
+
+    }
+    else if(down && left){
+
+        dx = -DIAGONAL_X;
+        dy = 1;
+
+    }
+    else if(down && right){
+
+        dx = DIAGONAL_X;
+        dy = 1;
+
+    }
+    else{
+
+        if(left)  dx--;
+        if(right) dx++;
+        if(up)    dy--;
+        if(down)  dy++;
+
+    }
+
+    if(dx !== 0 || dy !== 0){
+
+        const len = Math.hypot(dx,dy);
+
+        dx /= len;
+        dy /= len;
+
+    }
+
+    return {dx,dy};
+
+}
+
+function movePlayer(){
+
+    const move = getMovement();
+
+    const oldX = player.feet.x;
+    const oldY = player.feet.y;
+
+    player.feet.x += move.dx * PLAYER_SPEED;
+
+    if(!insideRoom(player.feet.x,player.feet.y)){
+
+        player.feet.x = oldX;
+
+    }
+
+    player.feet.y += move.dy * PLAYER_SPEED;
+
+    if(!insideRoom(player.feet.x,player.feet.y)){
+
+        player.feet.y = oldY;
+
+    }
+
+    return {
+
+        moving: move.dx !== 0 || move.dy !== 0,
+
+        dx: move.dx,
+        dy: move.dy
+
+    };
+
+}
+
+function snapPlayerToGrid(dx, dy){
+
+    let newX = player.feet.x;
+    let newY = player.feet.y;
+
+    if(dx !== 0){
+
+        newX = Math.floor(newX / 2) * 2;
+
+    }
+
+    if(dy !== 0){
+
+        newY = Math.floor(newY / 2) * 2;
+
+    }
+
+    if(insideRoom(newX, newY)){
+
+        player.feet.x = newX;
+        player.feet.y = newY;
+
+    }
+
+}
+
+function advanceSlimeFrame(){
+
+    player.animation.frame += player.animation.direction;
+
+    if(player.animation.frame >= 3){
+
+        player.animation.frame = 3;
+        player.animation.direction = -1;
+
+    }
+
+    if(player.animation.frame <= 0){
+
+        player.animation.frame = 0;
+        player.animation.direction = 1;
+
+    }
+
+}
+
+function animatePlayer(moving){
+
+    if(!moving) return;
+
+    player.animation.timer++;
+
+    if(player.animation.timer >= player.animation.delay){
+
+        player.animation.timer = 0;
+
+        advanceSlimeFrame();
+
+    }
+
+}
+
+function animateButtons(){
+
+    for(const button of buttons){
+
+        switch(button.state){
+
+            case "idle":
+
+                if(pressed[button.key]){
+
+                    button.frame = 1;
+                    button.timer = 0;
+                    button.queuedRelease = false;
+                    button.state = "pressing";
+
+                }
+
+                break;
+
+
+            case "pressing":
+
+                if(released[button.key]){
+
+                    button.queuedRelease = true;
+
+                }
+
+                button.timer++;
+
+                if(button.timer >= 1){
+
+                    button.frame = 2;
+                    button.timer = 0;
+
+                    if(button.queuedRelease){
+
+                        button.frame = 1;
+                        button.state = "releasing";
+
+                    }
+                    else{
+
+                        button.state = "pressed";
+
+                    }
+
+                }
+
+                break;
+
+
+            case "pressed":
+
+                if(released[button.key]){
+
+                    button.frame = 1;
+                    button.timer = 0;
+                    button.state = "releasing";
+
+                }
+
+                break;
+
+
+            case "releasing":
+
+                button.timer++;
+
+                if(button.timer >= 1){
+
+                    button.frame = 0;
+                    button.state = "idle";
+
+                }
+
+                break;
+
+        }
+
+    }
+
+}
+
+// ==================================================
+// DRAWING
+// ==================================================
+
+function draw(){
+
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    ctx.drawImage(
+        sprites.background,
+        0,
+        0
+    );
+
+    for(const button of buttons){
+
+    ctx.drawImage(
+
+        button.sprite,
+
+        button.frame * BUTTON_SIZE,
+        0,
+
+        BUTTON_SIZE,
+        BUTTON_SIZE,
+
+        button.x,
+        button.y,
+
+        BUTTON_SIZE,
+        BUTTON_SIZE
+
+    );
+
+}
+
+    const frame=player.animation.frame;
+    const width=FRAME_WIDTHS[frame];
+
+    ctx.drawImage(
+
+        sprites.slime,
+
+        FRAME_X[frame],
+        0,
+        width,
+        64,
+
+        Math.floor(player.feet.x-width/2),
+        Math.floor(player.feet.y-64),
+
+        width,
+        64
+
+    );
+
+    if(CONFIG.DEBUG){
+
+        // room outline
+
+        ctx.strokeStyle="cyan";
+        ctx.lineWidth=1;
+
+        ctx.beginPath();
+
+        ctx.moveTo(room[0].x,room[0].y);
+
+        for(let i=1;i<room.length;i++){
+
+            ctx.lineTo(room[i].x,room[i].y);
+
+        }
+
+        ctx.closePath();
+        ctx.stroke();
+
+        // hitbox points
+
+        ctx.fillStyle = "lime";
+
+        const points = [
+
+            {x:player.feet.x,                y:player.feet.y + HITBOX_OFFSET_Y - HITBOX.up},
+            {x:player.feet.x + HITBOX.right, y:player.feet.y + HITBOX_OFFSET_Y},
+            {x:player.feet.x,                y:player.feet.y + HITBOX_OFFSET_Y + HITBOX.down},
+            {x:player.feet.x - HITBOX.left,  y:player.feet.y + HITBOX_OFFSET_Y}
+
+        ];
+
+        for(const p of points){
+
+            ctx.fillRect(
+                Math.floor(p.x)-1,
+                Math.floor(p.y)-1,
+                3,
+                3
+            );
+
+        }
+
+    }
+
+}
+
+let wasMoving = false;
+
+let previousMove = {
+
+    dx: 0,
+    dy: 0
+
+};
+
+function update(){
+
+    const move = movePlayer();
+
+    if(!move.moving && wasMoving){
+
+        snapPlayerToGrid(previousMove.dx, previousMove.dy);
+
+    }
+
+    animatePlayer(move.moving);
+
+    if(pressed["z"] || pressed["x"] || pressed["c"]){
+
+        advanceSlimeFrame();
+
+    }
+
+    animateButtons();
+
+    if(move.moving){
+
+        previousMove = move;
+
+    }
+
+    wasMoving = move.moving;
+
+    for(const key of ["z","x","c"]){
+
+        pressed[key] = false;
+        released[key] = false;
+
+    }
+
+}
+
+function loop(){
+
+    update();
+
+    draw();
+
+}
+
+// ==================================================
+// GAME LOOP
+// ==================================================
+
+setInterval(loop,1000/CONFIG.FPS);
+
+</script>
+
+</body>
+</html>
